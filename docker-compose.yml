@@ -3,7 +3,10 @@ services:
   s3fs:
     container_name: s3fs
     #image: efrecon/s3fs:1.91
-    image: efrecon/s3fs:tm
+    #image: efrecon/s3fs:tm
+    build:
+      dockerfile: Dockerfile
+      context: .
     restart: on-failure:3
     cap_add:
       - SYS_ADMIN
