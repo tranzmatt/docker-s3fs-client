@@ -67,10 +67,16 @@ if [ -n "${AWS_S3_SECRET_ACCESS_KEY_FILE}" ]; then
 fi
 
 # Create or use authorisation file
-if [ -z "${AWS_S3_AUTHFILE}" ]; then
-    AWS_S3_AUTHFILE=${AWS_S3_ROOTDIR%/}/passwd-s3fs
-    echo "${AWS_S3_ACCESS_KEY_ID}:${AWS_S3_SECRET_ACCESS_KEY}" > "${AWS_S3_AUTHFILE}"
-    chmod 600 "${AWS_S3_AUTHFILE}"
+# If we're using a token, the AUTHFILE isn't needed
+if [ -z "${AWS_SESSION_TOKEN}" ]; then
+    #unset AWS_ACCESS_KEY_ID
+    #unset AWS_SECRET_ACCESS_KEY
+    #unset AWS_SESSION_TOKEN
+    if [ -z "${AWS_S3_AUTHFILE}" ]; then
+        AWS_S3_AUTHFILE=${AWS_S3_ROOTDIR%/}/passwd-s3fs
+        echo "${AWS_S3_ACCESS_KEY_ID}:${AWS_S3_SECRET_ACCESS_KEY}" > "${AWS_S3_AUTHFILE}"
+        chmod 600 "${AWS_S3_AUTHFILE}"
+    fi
 fi
 
 # forget about the password once done (this will have proper effects when the
@@ -98,28 +104,68 @@ if [ "$UID" -gt 0 ]; then
     _verbose "Add user $UID, turning on rootless-mode"
     adduser -u "$UID" -D -G "$GROUP_NAME" "$UID"
     RUN_AS=$UID
-    chown "$UID:$GID" "$AWS_S3_MOUNT" "${AWS_S3_AUTHFILE}" "$AWS_S3_ROOTDIR"
+    echo "chown $UID:$GID $AWS_S3_MOUNT ${AWS_S3_AUTHFILE} $AWS_S3_ROOTDIR"
+    chown "$UID:$GID" "$AWS_S3_MOUNT" "$AWS_S3_ROOTDIR"
+    if [ -n "${AWS_S3_AUTHFILE}" ]; then
+        chown "$UID:$GID" "${AWS_S3_AUTHFILE}"
+    fi
 fi
 
 # Debug options
 DEBUG_OPTS=
 if [ "$S3FS_DEBUG" = "1" ]; then
-    DEBUG_OPTS="-d -d"
+    DEBUG_OPTS="-d -d -f"
 fi
 
 # Additional S3FS options
-if [ -n "$S3FS_ARGS" ]; then
-    S3FS_ARGS="-o $S3FS_ARGS"
+if [ -n "${AWS_S3_ENDPOINT}" ]; then
+  S3FS_ARGS="-o endpoint=${AWS_S3_ENDPOINT} ${S3FS_ARGS}"
 fi
+
+su - $RUN_AS -c "ls -la ${AWS_S3_ROOTDIR%/}"
 
 # Mount as the requested used.
 _verbose "Mounting bucket ${AWS_S3_BUCKET} onto ${AWS_S3_MOUNT}, owner: $UID:$GID"
-su - $RUN_AS -c "s3fs $DEBUG_OPTS ${S3FS_ARGS} \
-    -o passwd_file=${AWS_S3_AUTHFILE} \
-    -o url=${AWS_S3_URL} \
-    -o uid=$UID \
-    -o gid=$GID \
-    ${AWS_S3_BUCKET} ${AWS_S3_MOUNT}"
+if [ -n "${AWS_SESSION_TOKEN}" ]; then
+    echo "su - $RUN_AS -c \"\
+        AWSACCESSKEYID=${AWS_ACCESS_KEY_ID} \
+        AWSSECRETACCESSKEY=${AWS_SECRET_ACCESS_KEY} \
+        AWSSESSIONTOKEN=${AWS_SESSION_TOKEN} \
+        s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
+        $DEBUG_OPTS ${S3FS_ARGS} \
+        -o use_session_token \
+        -o url=\"${AWS_S3_URL}\" \
+        -o uid=$UID \
+        -o gid=$GID\""
+
+    su - $RUN_AS -c "\
+        AWSACCESSKEYID=${AWS_ACCESS_KEY_ID} \
+        AWSSECRETACCESSKEY=${AWS_SECRET_ACCESS_KEY} \
+        AWSSESSIONTOKEN=${AWS_SESSION_TOKEN} \
+        s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
+        $DEBUG_OPTS ${S3FS_ARGS} \
+        -o use_session_token \
+        -o url=\"${AWS_S3_URL}\" \
+        -o uid=$UID \
+        -o gid=$GID"
+else
+    echo "su - $RUN_AS -c \"\
+        s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
+        $DEBUG_OPTS ${S3FS_ARGS} \
+        -o passwd_file=${AWS_S3_AUTHFILE} \
+        -o url=\"${AWS_S3_URL}\" \
+        -o uid=$UID \
+        -o gid=$GID\""
+
+    su - $RUN_AS -c "\
+        s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
+        $DEBUG_OPTS ${S3FS_ARGS} \
+        -o ${S3FS_AUTH} \
+        -o passwd_file=${AWS_S3_AUTHFILE} \
+        -o url=\"${AWS_S3_URL}\" \
+        -o uid=$UID \
+        -o gid=$GID"
+fi
 
 # s3fs can claim to have a mount even though it didn't succeed. Doing an
 # operation actually forces it to detect that and remove the mount.
