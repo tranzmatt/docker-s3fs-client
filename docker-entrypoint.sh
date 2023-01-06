@@ -37,6 +37,7 @@ fi
 
 # S3 main URL
 AWS_S3_URL=${AWS_S3_URL:-"https://s3.amazonaws.com"}
+AWS_S3_ENDPOINT=${AWS_S3_ENDPOINT:-""}
 
 # Root directory for settings and bucket.
 AWS_S3_ROOTDIR=${AWS_S3_ROOTDIR:-"/opt/s3fs"}
@@ -48,6 +49,8 @@ AWS_S3_MOUNT=${AWS_S3_MOUNT:-"${AWS_S3_ROOTDIR%/}/bucket"}
 AWS_S3_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID:-""}
 AWS_S3_SECRET_ACCESS_KEY=${AWS_S3_SECRET_ACCESS_KEY:-""}
 AWS_S3_SECRET_ACCESS_KEY_FILE=${AWS_S3_SECRET_ACCESS_KEY_FILE:-""}
+AWS_S3_SESSION_TOKEN=${AWS_S3_SESSION_TOKEN:-""}
+
 AWS_S3_AUTHFILE=${AWS_S3_AUTHFILE:-""}
 
 # Check variables and defaults
@@ -68,10 +71,7 @@ fi
 
 # Create or use authorisation file
 # If we're using a token, the AUTHFILE isn't needed
-if [ -z "${AWS_SESSION_TOKEN}" ]; then
-    #unset AWS_ACCESS_KEY_ID
-    #unset AWS_SECRET_ACCESS_KEY
-    #unset AWS_SESSION_TOKEN
+if [ -z "${AWS_S3_SESSION_TOKEN}" ]; then
     if [ -z "${AWS_S3_AUTHFILE}" ]; then
         AWS_S3_AUTHFILE=${AWS_S3_ROOTDIR%/}/passwd-s3fs
         echo "${AWS_S3_ACCESS_KEY_ID}:${AWS_S3_SECRET_ACCESS_KEY}" > "${AWS_S3_AUTHFILE}"
@@ -118,34 +118,37 @@ if [ "$S3FS_DEBUG" = "1" ]; then
 fi
 
 # Additional S3FS options
-if [ -n "${AWS_S3_ENDPOINT}" ]; then
-  S3FS_ARGS="-o endpoint=${AWS_S3_ENDPOINT} ${S3FS_ARGS}"
+if [ -n "$S3FS_ARGS" ]; then
+    S3FS_ARGS="$S3FS_ARGS"
 fi
 
-su - $RUN_AS -c "ls -la ${AWS_S3_ROOTDIR%/}"
+# Add custom endpoint if needed
+if [ -n "$AWS_S3_ENDPOINT" ]; then
+    AWS_S3_URL="${AWS_S3_URL} -o endpoint=${AWS_S3_ENDPOINT}"
+fi
 
 # Mount as the requested used.
 _verbose "Mounting bucket ${AWS_S3_BUCKET} onto ${AWS_S3_MOUNT}, owner: $UID:$GID"
-if [ -n "${AWS_SESSION_TOKEN}" ]; then
+if [ -n "${AWS_S3_SESSION_TOKEN}" ]; then
     echo "su - $RUN_AS -c \"\
-        AWSACCESSKEYID=${AWS_ACCESS_KEY_ID} \
-        AWSSECRETACCESSKEY=${AWS_SECRET_ACCESS_KEY} \
-        AWSSESSIONTOKEN=${AWS_SESSION_TOKEN} \
+        AWSACCESSKEYID=${AWS_S3_ACCESS_KEY_ID} \
+        AWSSECRETACCESSKEY=${AWS_S3_SECRET_ACCESS_KEY} \
+        AWSSESSIONTOKEN=${AWS_S3_SESSION_TOKEN} \
         s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
         $DEBUG_OPTS ${S3FS_ARGS} \
         -o use_session_token \
-        -o url=\"${AWS_S3_URL}\" \
+        -o url=${AWS_S3_URL} \
         -o uid=$UID \
         -o gid=$GID\""
 
     su - $RUN_AS -c "\
         AWSACCESSKEYID=${AWS_ACCESS_KEY_ID} \
-        AWSSECRETACCESSKEY=${AWS_SECRET_ACCESS_KEY} \
-        AWSSESSIONTOKEN=${AWS_SESSION_TOKEN} \
+        AWSSECRETACCESSKEY=${AWS_S3_SECRET_ACCESS_KEY} \
+        AWSSESSIONTOKEN=${AWS_S3_SESSION_TOKEN} \
         s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
         $DEBUG_OPTS ${S3FS_ARGS} \
         -o use_session_token \
-        -o url=\"${AWS_S3_URL}\" \
+        -o url=${AWS_S3_URL} \
         -o uid=$UID \
         -o gid=$GID"
 else
@@ -153,16 +156,15 @@ else
         s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
         $DEBUG_OPTS ${S3FS_ARGS} \
         -o passwd_file=${AWS_S3_AUTHFILE} \
-        -o url=\"${AWS_S3_URL}\" \
+        -o url=${AWS_S3_URL} \
         -o uid=$UID \
         -o gid=$GID\""
 
     su - $RUN_AS -c "\
         s3fs ${AWS_S3_BUCKET} ${AWS_S3_MOUNT} \
         $DEBUG_OPTS ${S3FS_ARGS} \
-        -o ${S3FS_AUTH} \
         -o passwd_file=${AWS_S3_AUTHFILE} \
-        -o url=\"${AWS_S3_URL}\" \
+        -o url=${AWS_S3_URL} \
         -o uid=$UID \
         -o gid=$GID"
 fi
