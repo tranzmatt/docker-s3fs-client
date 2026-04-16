@@ -47,6 +47,7 @@ AWS_S3_MOUNT=${AWS_S3_MOUNT:-"${AWS_S3_ROOTDIR%/}/bucket"}
 
 # Authorisation details
 AWS_S3_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID:-""}
+AWS_S3_ACCESS_KEY_ID_FILE=${AWS_S3_ACCESS_KEY_ID_FILE:-""}
 AWS_S3_SECRET_ACCESS_KEY=${AWS_S3_SECRET_ACCESS_KEY:-""}
 AWS_S3_SECRET_ACCESS_KEY_FILE=${AWS_S3_SECRET_ACCESS_KEY_FILE:-""}
 AWS_S3_SESSION_TOKEN=${AWS_S3_SESSION_TOKEN:-""}
@@ -54,19 +55,27 @@ AWS_S3_SESSION_TOKEN=${AWS_S3_SESSION_TOKEN:-""}
 AWS_S3_AUTHFILE=${AWS_S3_AUTHFILE:-""}
 
 # Check variables and defaults
-if [ -z "${AWS_S3_ACCESS_KEY_ID}" ] && \
-    [ -z "${AWS_S3_SECRET_ACCESS_KEY}" ] && \
-    [ -z "${AWS_S3_SECRET_ACCESS_KEY_FILE}" ] && \
-    [ -z "${AWS_S3_AUTHFILE}" ]; then
+if [ -z "$AWS_S3_ACCESS_KEY_ID" ] && \
+    [ -z "$AWS_S3_ACCESS_KEY_ID_FILE" ] && \
+    [ -z "$AWS_S3_SECRET_ACCESS_KEY" ] && \
+    [ -z "$AWS_S3_SECRET_ACCESS_KEY_FILE" ] && \
+    [ -z "$AWS_S3_AUTHFILE" ]; then
     _error "You need to provide some credentials!!"
 fi
 if [ -z "${AWS_S3_BUCKET}" ]; then
     _error "No bucket name provided!"
 fi
 
+# Read AWS S3 Access Key ID from file
+if [ -n "${AWS_S3_ACCESS_KEY_ID_FILE}" ]; then
+    # shellcheck disable=SC2229   # We WANT to read the content of the file pointed by the variable!
+    read -r AWS_S3_ACCESS_KEY_ID < "${AWS_S3_ACCESS_KEY_ID_FILE}"
+fi
+
+# Read AWS S3 Secret Access Key from file
 if [ -n "${AWS_S3_SECRET_ACCESS_KEY_FILE}" ]; then
     # shellcheck disable=SC2229   # We WANT to read the content of the file pointed by the variable!
-    AWS_S3_SECRET_ACCESS_KEY=$(read -r "${AWS_S3_SECRET_ACCESS_KEY_FILE}")
+    read -r AWS_S3_SECRET_ACCESS_KEY < "${AWS_S3_SECRET_ACCESS_KEY_FILE}"
 fi
 
 # Create or use authorisation file
@@ -79,7 +88,13 @@ if [ -z "${AWS_S3_SESSION_TOKEN}" ]; then
     fi
 fi
 
-# forget about the password once done (this will have proper effects when the
+# Forget about the secret once done (this will have proper effects when the
+# PASSWORD_FILE-version of the setting is used)
+if [ -n "${AWS_S3_ACCESS_KEY_ID}" ]; then
+    unset AWS_S3_ACCESS_KEY_ID
+fi
+
+# Forget about the secret once done (this will have proper effects when the
 # PASSWORD_FILE-version of the setting is used)
 if [ -n "${AWS_S3_SECRET_ACCESS_KEY}" ]; then
     unset AWS_S3_SECRET_ACCESS_KEY
@@ -91,8 +106,8 @@ if [ ! -d "$AWS_S3_MOUNT" ]; then
 fi
 
 # Add a group, default to naming it after the GID when not found
-GROUP_NAME=$(getent group "${GID}" | cut -d":" -f1)
-if [ "$GID" -gt 0 ] && [ -z "${GROUP_NAME}" ]; then
+GROUP_NAME=$(getent group "$GID" | cut -d":" -f1)
+if [ "$GID" -gt 0 ] && [ -z "$GROUP_NAME" ]; then
     _verbose "Add group $GID"
     addgroup -g "$GID" -S "$GID"
     GROUP_NAME=$GID
@@ -101,14 +116,23 @@ fi
 # Add a user, default to naming it after the UID.
 RUN_AS=${RUN_AS:-""}
 if [ "$UID" -gt 0 ]; then
-    _verbose "Add user $UID, turning on rootless-mode"
-    adduser -u "$UID" -D -G "$GROUP_NAME" "$UID"
+    USER_NAME=$(getent passwd "$UID" | cut -d":" -f1)
+    if [ -z "$USER_NAME" ]; then
+        _verbose "Add user $UID, turning on rootless-mode"
+        adduser -u "$UID" -D -G "$GROUP_NAME" "$UID"
+    else
+        _verbose "Running as user $UID, turning on rootless-mode"
+    fi
     RUN_AS=$UID
+<<<<<<< HEAD
     echo "chown $UID:$GID $AWS_S3_MOUNT ${AWS_S3_AUTHFILE} $AWS_S3_ROOTDIR"
     chown "$UID:$GID" "$AWS_S3_MOUNT" "$AWS_S3_ROOTDIR"
     if [ -n "${AWS_S3_AUTHFILE}" ]; then
         chown "$UID:$GID" "${AWS_S3_AUTHFILE}"
     fi
+=======
+    chown "${UID}:${GID}" "$AWS_S3_MOUNT" "${AWS_S3_AUTHFILE}" "$AWS_S3_ROOTDIR"
+>>>>>>> upstream/master
 fi
 
 # Debug options
@@ -129,6 +153,7 @@ fi
 
 # Mount as the requested used.
 _verbose "Mounting bucket ${AWS_S3_BUCKET} onto ${AWS_S3_MOUNT}, owner: $UID:$GID"
+<<<<<<< HEAD
 if [ -n "${AWS_S3_SESSION_TOKEN}" ]; then
     echo "su - $RUN_AS -c \"\
         AWSACCESSKEYID=${AWS_S3_ACCESS_KEY_ID} \
@@ -168,10 +193,18 @@ else
         -o uid=$UID \
         -o gid=$GID"
 fi
+=======
+su - $RUN_AS -c "s3fs $DEBUG_OPTS ${S3FS_ARGS} \
+    -o passwd_file=${AWS_S3_AUTHFILE} \
+    -o "url=${AWS_S3_URL}" \
+    -o uid=$UID \
+    -o gid=$GID \
+    ${AWS_S3_BUCKET} ${AWS_S3_MOUNT}"
+>>>>>>> upstream/master
 
 # s3fs can claim to have a mount even though it didn't succeed. Doing an
 # operation actually forces it to detect that and remove the mount.
-su - $RUN_AS -c "ls ${AWS_S3_MOUNT}"
+su - $RUN_AS -c "stat ${AWS_S3_MOUNT}"
 
 if healthcheck.sh; then
     echo "Mounted bucket ${AWS_S3_BUCKET} onto ${AWS_S3_MOUNT}"

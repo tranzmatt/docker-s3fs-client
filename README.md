@@ -53,6 +53,10 @@ make sure that the container will be able to make available the S3 bucket
 using FUSE. `rshared` is what ensures that bind mounting makes the files and
 directories available back to the host and recursively to other containers.
 
+Note that there are reports of mount propagation not working with the compose
+plugin. See [#42](https://github.com/efrecon/docker-s3fs-client/issues/42).
+Reverting to standalone `docker-compose` seems to work.
+
 ## Container Options
 
 A series of environment variables, most led by `AWS_S3_` can be used to
@@ -63,7 +67,14 @@ parametrise the container:
   format specified by [s3fs]. This can be empty, in which case data will be
   taken from the other authorisation-related environment variables.
 * `AWS_S3_ACCESS_KEY_ID` is the access key to the S3 bucket, this is only used
-  whenever `AWS_S3_AUTHFILE` is empty.
+  whenever `AWS_S3_AUTHFILE` is empty. Note however that the variable
+  `AWS_S3_ACCESS_KEY_ID_FILE` has precedence over this one.
+* `AWS_S3_ACCESS_KEY_ID_FILE` points instead to a file that will contain the
+  access key id to the S3 bucket. When this is present, the password will be
+  taken from the file instead of from the `AWS_S3_ACCESS_KEY_ID` variable.
+  If that variable existed, it will be disregarded. This makes it easy to pass
+  passwords using Docker [secrets]. This is only ever used whenever
+  `AWS_S3_AUTHFILE` is empty.
 * `AWS_S3_SECRET_ACCESS_KEY` is the secret access key to the S3 bucket, this is
   only used whenever `AWS_S3_AUTHFILE` is empty. Note however that the variable
   `AWS_S3_SECRET_ACCESS_KEY_FILE` has precedence over this one.

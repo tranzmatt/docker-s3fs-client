@@ -1,4 +1,4 @@
-ARG ALPINE_VERSION=3.15.3
+ARG ALPINE_VERSION=3.20.3
 FROM alpine:$ALPINE_VERSION AS build
 
 ARG S3FS_VERSION=v1.91
@@ -12,7 +12,6 @@ RUN apk --no-cache add \
     automake \
     autoconf \
     libxml2-dev \
-    libressl-dev \
     mailcap \
     fuse-dev \
     curl-dev && \
@@ -43,6 +42,7 @@ COPY --from=build /usr/bin/s3fs /usr/bin/s3fs
 # file, set environment variables with the key and the secret.
 ENV AWS_S3_URL=https://s3.amazonaws.com
 ENV AWS_S3_ACCESS_KEY_ID=
+ENV AWS_S3_ACCESS_KEY_ID_FILE=
 ENV AWS_S3_SECRET_ACCESS_KEY=
 ENV AWS_S3_SECRET_ACCESS_KEY_FILE=
 ENV AWS_S3_AUTHFILE=
@@ -71,7 +71,7 @@ RUN mkdir /opt/s3fs && \
       libgcc \
       libstdc++ \
       tini && \
-    deluser xfs && \
+    if id -u xfs >/dev/null 2>&1; then deluser xfs; fi && \
     s3fs --version
 
 # allow access to volume by different user to enable UIDs other than root when
